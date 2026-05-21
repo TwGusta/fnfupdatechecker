@@ -24,7 +24,7 @@ import funkin.Paths;
 
 // ============================================================
 //  UpdateChecker - Sistema de Atualizações para FNF Mods
-//  Versão do core: 1.0.0
+//  Versão do core: 1.0.1
 //  GitHub: https://github.com/TwGusta/fnfupdatechecker
 //
 //  NÃO edite este arquivo! Edite UpdateCheckerConfig.hxc.
@@ -33,7 +33,7 @@ import funkin.Paths;
 class UpdateChecker extends Module {
 
     // Versão interna do sistema (NÃO é a versão do seu mod)
-    static var CORE_VERSION:String = "1.0.0";
+    static var CORE_VERSION:String = "1.0.1";
     static var GH_RAW:String = "https://raw.githubusercontent.com/TwGusta/fnfupdatechecker/main";
 
     var checado:Bool = false;
@@ -414,6 +414,14 @@ class UpdatePopupState extends MusicBeatState {
         var btnW = 300;
         var btnH = 55;
 
+        // --- MENSAGEM DE TESTE DE ATUALIZACAO ---
+        var testeTxt = new FlxText(cx, cy + 10, panelW, "TESTE DO GITHUB FUNCIONANDO NO CELULAR!", 28);
+        testeTxt.setFormat(Paths.font("vcr.ttf"), 28, 0xFF00FF00, "center", FlxTextBorderStyle.OUTLINE, 0xFF000000);
+        testeTxt.scrollFactor.set(0, 0);
+        testeTxt.angle = -10;
+        add(testeTxt);
+        changelogItems.push({spr: testeTxt, baseY: testeTxt.y}); // adiciona na lista pra rolar junto ou apenas ficar fixo (aqui vai ficar fixo mas afetado pelo pushOffscreen)
+        
         btnUpdate = new FlxSprite(cx + 100, btnY).makeGraphic(btnW, btnH, 0xFF2A9040);
         btnUpdate.scrollFactor.set(0, 0);
         btnUpdate.ID = 0;
