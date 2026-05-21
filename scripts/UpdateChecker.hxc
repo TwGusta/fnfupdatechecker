@@ -49,12 +49,11 @@ class UpdateChecker extends Module {
 
         // Lê configurações do UpdateCheckerConfig.hxc
         var cfg = ModuleHandler.getModule('UpdateCheckerConfig');
-        var modID:String        = (cfg != null) ? Std.string(cfg.scriptGet('modID'))        : "649094";
-        var versaoAtual:String  = (cfg != null) ? Std.string(cfg.scriptGet('versaoAtual'))  : "0.8.0";
-        var modFolderName:String= (cfg != null) ? Std.string(cfg.scriptGet('modFolderName')): "SYNK-UpdateChecker";
+        var modID:String       = (cfg != null) ? Std.string(cfg.scriptGet('modID'))       : "649094";
+        var versaoAtual:String = (cfg != null) ? Std.string(cfg.scriptGet('versaoAtual')) : "0.8.0";
 
         // ── Auto-atualização do sistema (em background, silencioso) ──
-        selfUpdate(modFolderName);
+        selfUpdate();
 
         // ── Verificação de atualização do mod no GameBanana ──
         var urlUpdates = "https://gamebanana.com/apiv11/Mod/" + modID + "/Updates?_t=" + FlxG.random.int(0, 999999);
@@ -150,7 +149,7 @@ class UpdateChecker extends Module {
     }
 
     // ── Verifica e baixa nova versão do sistema do GitHub ──
-    function selfUpdate(modFolderName:String) {
+    function selfUpdate() {
         var verUrl = GH_RAW + "/version.txt?_t=" + FlxG.random.int(0, 999999);
         var verLoader = new URLLoader();
         verLoader.addEventListener("complete", function(e) {
@@ -163,9 +162,24 @@ class UpdateChecker extends Module {
                 var coreLoader = new URLLoader();
                 coreLoader.addEventListener("complete", function(ec) {
                     try {
+                        // Descobre automaticamente o caminho do script varrendo a pasta mods/
                         var cwd = StringTools.replace(Sys.getCwd(), "\\", "/");
                         if (!StringTools.endsWith(cwd, "/")) cwd += "/";
-                        var savePath = cwd + "mods/" + modFolderName + "/scripts/UpdateChecker.hxc";
+                        var modsDir = cwd + "mods/";
+                        var savePath:String = null;
+                        try {
+                            for (folder in sys.FileSystem.readDirectory(modsDir)) {
+                                var candidate = modsDir + folder + "/scripts/UpdateChecker.hxc";
+                                if (sys.FileSystem.exists(candidate)) {
+                                    savePath = candidate;
+                                    break;
+                                }
+                            }
+                        } catch(fe:Dynamic) {}
+                        if (savePath == null) {
+                            trace("UpdateChecker: Nao foi possivel encontrar o caminho do script para salvar.");
+                            return;
+                        }
                         sys.io.File.saveContent(savePath, Std.string(ec.target.data));
                         trace("UpdateChecker: Sistema atualizado para v" + remoteVer + "! Reinicie o jogo para aplicar.");
                     } catch(err:Dynamic) {
@@ -174,6 +188,7 @@ class UpdateChecker extends Module {
                 });
                 coreLoader.addEventListener("ioError", function(ec) {
                     trace("UpdateChecker: Erro ao baixar sistema do GitHub.");
+
                 });
                 coreLoader.load(new URLRequest(coreUrl));
             } catch(err:Dynamic) {}
