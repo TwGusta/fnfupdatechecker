@@ -24,7 +24,7 @@ import funkin.Paths;
 
 // ============================================================
 //  UpdateChecker - Sistema de Atualizações para FNF Mods
-//  Versão do core: 1.0.1
+//  Versão do core: 1.0.0
 //  GitHub: https://github.com/TwGusta/fnfupdatechecker
 //
 //  NÃO edite este arquivo! Edite UpdateCheckerConfig.hxc.
@@ -33,7 +33,7 @@ import funkin.Paths;
 class UpdateChecker extends Module {
 
     // Versão interna do sistema (NÃO é a versão do seu mod)
-    static var CORE_VERSION:String = "1.0.1";
+    static var CORE_VERSION:String = "1.0.0";
     static var GH_RAW:String = "https://raw.githubusercontent.com/TwGusta/fnfupdatechecker/main";
 
     var checado:Bool = false;
@@ -51,9 +51,10 @@ class UpdateChecker extends Module {
         var cfg = ModuleHandler.getModule('UpdateCheckerConfig');
         var modID:String       = (cfg != null) ? Std.string(cfg.scriptGet('modID'))       : "649094";
         var versaoAtual:String = (cfg != null) ? Std.string(cfg.scriptGet('versaoAtual')) : "0.8.0";
+        var modFolderName:String = (cfg != null) && cfg.scriptGet('modFolderName') != null ? Std.string(cfg.scriptGet('modFolderName')) : "SYNK-UpdateChecker";
 
         // ── Auto-atualização do sistema (em background, silencioso) ──
-        selfUpdate();
+        selfUpdate(modFolderName);
 
         // ── Verificação de atualização do mod no GameBanana ──
         var urlUpdates = "https://gamebanana.com/apiv11/Mod/" + modID + "/Updates?_t=" + FlxG.random.int(0, 999999);
@@ -149,12 +150,15 @@ class UpdateChecker extends Module {
     }
 
     // ── Verifica e baixa nova versão do sistema do GitHub ──
-    function selfUpdate() {
+    function selfUpdate(modFolderName:String) {
         var verUrl = GH_RAW + "/version.txt?_t=" + FlxG.random.int(0, 999999);
         var verLoader = new URLLoader();
         verLoader.addEventListener("complete", function(e) {
             try {
-                var remoteVer = StringTools.trim(Std.string(e.target.data));
+                var remoteVer = Std.string(e.target.data);
+                while (remoteVer.length > 0 && (remoteVer.charAt(0) == " " || remoteVer.charAt(0) == "\n" || remoteVer.charAt(0) == "\r")) remoteVer = remoteVer.substr(1);
+                while (remoteVer.length > 0 && (remoteVer.charAt(remoteVer.length - 1) == " " || remoteVer.charAt(remoteVer.length - 1) == "\n" || remoteVer.charAt(remoteVer.length - 1) == "\r")) remoteVer = remoteVer.substr(0, remoteVer.length - 1);
+                
                 if (!isNewerVersion(remoteVer, CORE_VERSION)) return;
 
                 trace("UpdateChecker: Nova versao do sistema disponivel (" + remoteVer + "). Baixando...");
@@ -162,39 +166,35 @@ class UpdateChecker extends Module {
                 var coreLoader = new URLLoader();
                 coreLoader.addEventListener("complete", function(ec) {
                     try {
-                        // Descobre automaticamente o caminho do script varrendo a pasta mods/
-                        var cwd = StringTools.replace(Sys.getCwd(), "\\", "/");
-                        if (!StringTools.endsWith(cwd, "/")) cwd += "/";
-                        var modsDir = cwd + "mods/";
-                        var savePath:String = null;
-                        try {
-                            for (folder in sys.FileSystem.readDirectory(modsDir)) {
-                                var candidate = modsDir + folder + "/scripts/UpdateChecker.hxc";
-                                if (sys.FileSystem.exists(candidate)) {
-                                    savePath = candidate;
-                                    break;
-                                }
-                            }
-                        } catch(fe:Dynamic) {}
-                        if (savePath == null) {
-                            trace("UpdateChecker: Nao foi possivel encontrar o caminho do script para salvar.");
-                            return;
-                        }
+                        var savePath = "mods/" + modFolderName + "/scripts/UpdateChecker.hxc";
+                        
                         sys.io.File.saveContent(savePath, Std.string(ec.target.data));
                         trace("UpdateChecker: Sistema atualizado para v" + remoteVer + "! Reinicie o jogo para aplicar.");
                     } catch(err:Dynamic) {
-                        trace("UpdateChecker: Erro ao salvar sistema - " + err);
+                        showError("Update fail: " + err);
                     }
                 });
                 coreLoader.addEventListener("ioError", function(ec) {
-                    trace("UpdateChecker: Erro ao baixar sistema do GitHub.");
-
+                    showError("Update fail: GitHub download error");
                 });
                 coreLoader.load(new URLRequest(coreUrl));
-            } catch(err:Dynamic) {}
+            } catch(err:Dynamic) {
+                showError("Update fail: " + err);
+            }
         });
-        verLoader.addEventListener("ioError", function(e) {});
+        verLoader.addEventListener("ioError", function(e) {
+            showError("Update fail: version.txt download error");
+        });
         verLoader.load(new URLRequest(verUrl));
+    }
+
+    function showError(msg:String) {
+        var txt = new FlxText(10, 10, FlxG.width, msg, 20);
+        txt.setFormat(Paths.font("vcr.ttf"), 20, 0xFFFF0000, "left", FlxTextBorderStyle.OUTLINE, 0xFF000000);
+        txt.scrollFactor.set(0, 0);
+        txt.cameras = [FlxG.camera];
+        FlxG.state.add(txt);
+        new FlxTimer().start(5.0, function(t) { txt.kill(); });
     }
 
     function isNewerVersion(remote:String, local:String):Bool {
@@ -414,14 +414,6 @@ class UpdatePopupState extends MusicBeatState {
         var btnW = 300;
         var btnH = 55;
 
-        // --- MENSAGEM DE TESTE DE ATUALIZACAO ---
-        var testeTxt = new FlxText(cx, cy + 10, panelW, "TESTE DO GITHUB FUNCIONANDO NO CELULAR!", 28);
-        testeTxt.setFormat(Paths.font("vcr.ttf"), 28, 0xFF00FF00, "center", FlxTextBorderStyle.OUTLINE, 0xFF000000);
-        testeTxt.scrollFactor.set(0, 0);
-        testeTxt.angle = -10;
-        add(testeTxt);
-        changelogItems.push({spr: testeTxt, baseY: testeTxt.y}); // adiciona na lista pra rolar junto ou apenas ficar fixo (aqui vai ficar fixo mas afetado pelo pushOffscreen)
-        
         btnUpdate = new FlxSprite(cx + 100, btnY).makeGraphic(btnW, btnH, 0xFF2A9040);
         btnUpdate.scrollFactor.set(0, 0);
         btnUpdate.ID = 0;
