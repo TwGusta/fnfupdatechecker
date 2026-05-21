@@ -1,0 +1,649 @@
+import funkin.modding.module.Module;
+import funkin.modding.module.ModuleHandler;
+import funkin.modding.base.ScriptedMusicBeatState;
+import funkin.ui.MusicBeatState;
+import funkin.ui.title.TitleState;
+import openfl.net.URLLoader;
+import openfl.net.URLRequest;
+import openfl.display.Loader;
+import openfl.display.BitmapData;
+import openfl.geom.Matrix;
+import openfl.system.Capabilities;
+import funkin.util.WindowUtil;
+import haxe.Json;
+import flixel.FlxG;
+import flixel.FlxSprite;
+import flixel.text.FlxText;
+import flixel.util.FlxColor;
+import flixel.tweens.FlxTween;
+import flixel.tweens.FlxEase;
+import flixel.group.FlxTypedGroup;
+import flixel.text.FlxTextBorderStyle;
+import flixel.util.FlxTimer;
+import funkin.Paths;
+
+// ============================================================
+//  UpdateChecker - Sistema de Atualizações para FNF Mods
+//  Versão do core: 1.0.0
+//  GitHub: https://github.com/TwGusta/fnfupdatechecker
+//
+//  NÃO edite este arquivo! Edite UpdateCheckerConfig.hxc.
+//  Este arquivo se atualiza automaticamente do GitHub.
+// ============================================================
+class UpdateChecker extends Module {
+
+    // Versão interna do sistema (NÃO é a versão do seu mod)
+    static var CORE_VERSION:String = "1.0.0";
+    static var GH_RAW:String = "https://raw.githubusercontent.com/TwGusta/fnfupdatechecker/main";
+
+    var checado:Bool = false;
+
+    function new() {
+        super("UpdateChecker");
+    }
+
+    override function onStateChangeEnd(event) {
+        super.onStateChangeEnd(event);
+        if (checado || event.targetState is TitleState == false) return;
+        checado = true;
+
+        // Lê configurações do UpdateCheckerConfig.hxc
+        var cfg = ModuleHandler.getModule('UpdateCheckerConfig');
+        var modID:String        = (cfg != null) ? Std.string(cfg.scriptGet('modID'))        : "649094";
+        var versaoAtual:String  = (cfg != null) ? Std.string(cfg.scriptGet('versaoAtual'))  : "0.8.0";
+        var modFolderName:String= (cfg != null) ? Std.string(cfg.scriptGet('modFolderName')): "SYNK-UpdateChecker";
+
+        // ── Auto-atualização do sistema (em background, silencioso) ──
+        selfUpdate(modFolderName);
+
+        // ── Verificação de atualização do mod no GameBanana ──
+        var urlUpdates = "https://gamebanana.com/apiv11/Mod/" + modID + "/Updates?_t=" + FlxG.random.int(0, 999999);
+        var loaderUpdates = new URLLoader();
+        loaderUpdates.addEventListener("complete", function(e) {
+            try {
+                var json = Json.parse(e.target.data);
+                if (json._aRecords == null || json._aRecords.length == 0) return;
+
+                var update       = json._aRecords[0];
+                var versaoRemota = update._sVersion;
+                if (versaoRemota == null || versaoRemota == versaoAtual) return;
+
+                var nomeDoMod = (update._aSubmission != null) ? update._aSubmission._sName : "seu Mod";
+                var linkMod   = (update._aSubmission != null) ? update._aSubmission._sDownloadUrl : null;
+                if (update._aFiles != null && update._aFiles.length > 0)
+                    linkMod = update._aFiles[0]._sDownloadUrl;
+
+                var changelog = "";
+                UpdatePopupState.changelogData = null;
+                if (update._aChangeLog != null && update._aChangeLog.length > 0) {
+                    UpdatePopupState.changelogData = update._aChangeLog;
+                } else if (update._sText != null && update._sText != "") {
+                    changelog = update._sText;
+                } else {
+                    var lang = "en";
+                    try { lang = openfl.system.Capabilities.language.toLowerCase().substring(0, 2); } catch(e:Dynamic) {}
+                    switch (lang) {
+                        case "pt": changelog = "- Diversas melhorias e correcoes!";
+                        case "es": changelog = "- Varias mejoras y correcciones!";
+                        case "fr": changelog = "- Diverses ameliorations et corrections!";
+                        case "de": changelog = "- Verschiedene Verbesserungen und Fehlerbehebungen!";
+                        case "it": changelog = "- Vari miglioramenti e correzioni!";
+                        case "nl": changelog = "- Diverse verbeteringen en bugfixes!";
+                        case "pl": changelog = "- Rozne ulepszenia i poprawki!";
+                        case "tr": changelog = "- Cesitli iyilestirmeler ve hata duzeltmeleri!";
+                        case "sv": changelog = "- Olika forbattringar och buggfixar!";
+                        case "no": changelog = "- Ulike forbedringer og feilrettinger!";
+                        case "da": changelog = "- Forskellige forbedringer og fejlrettelser!";
+                        case "fi": changelog = "- Erilaisia parannuksia ja virhekorjauksia!";
+                        case "id": changelog = "- Berbagai peningkatan dan perbaikan bug!";
+                        case "ms": changelog = "- Pelbagai peningkatan dan pembetulan pepijat!";
+                        case "tl": changelog = "- Iba't ibang mga pagpapabuti at pag-aayos!";
+                        case "ro": changelog = "- Diverse imbunatatiri si corectii!";
+                        case "hu": changelog = "- Kulonbozo javitasok es hibaelharitasok!";
+                        case "cs": changelog = "- Ruzna vylepseni a opravy chyb!";
+                        case "sk": changelog = "- Rozne vylepsenia a opravy chyb!";
+                        case "hr": changelog = "- Razna poboljsanja i ispravci!";
+                        default: changelog = "- Various improvements and bug fixes!";
+                    }
+                }
+
+                UpdatePopupState.modName     = nomeDoMod;
+                UpdatePopupState.versionStr  = versaoRemota;
+                UpdatePopupState.changelogStr = changelog;
+                UpdatePopupState.downloadLink = linkMod;
+                UpdatePopupState.thumbUrl    = null;
+                UpdatePopupState.modID_      = modID;
+
+                var urlProfile = "https://gamebanana.com/apiv11/Mod/" + modID + "/ProfilePage?_t=" + FlxG.random.int(0, 999999);
+                var loaderProfile = new URLLoader();
+                loaderProfile.addEventListener("complete", function(ep) {
+                    try {
+                        var profile = Json.parse(ep.target.data);
+                        var imgs    = profile._aPreviewMedia._aImages;
+                        if (imgs != null && imgs.length > 0) {
+                            var img  = imgs[0];
+                            var base = img._sBaseUrl;
+                            var file = (img._sFile530 != null) ? img._sFile530
+                                     : (img._sFile220 != null) ? img._sFile220
+                                     : img._sFile;
+                            if (base != null && file != null)
+                                UpdatePopupState.thumbUrl = base + "/" + file;
+                        }
+                    } catch(err:Dynamic) {
+                        trace("UpdateChecker: Nao foi possivel obter thumbnail - " + err);
+                    }
+                    FlxG.switchState(ScriptedMusicBeatState.init('UpdatePopupState'));
+                });
+                loaderProfile.addEventListener("ioError", function(ep) {
+                    FlxG.switchState(ScriptedMusicBeatState.init('UpdatePopupState'));
+                });
+                loaderProfile.load(new URLRequest(urlProfile));
+
+            } catch(err:Dynamic) {
+                trace("UpdateChecker: Erro ao ler atualizacoes - " + err);
+            }
+        });
+        loaderUpdates.addEventListener("ioError", function(e) {
+            trace("UpdateChecker: Sem conexao com o GameBanana.");
+        });
+        loaderUpdates.load(new URLRequest(urlUpdates));
+    }
+
+    // ── Verifica e baixa nova versão do sistema do GitHub ──
+    function selfUpdate(modFolderName:String) {
+        var verUrl = GH_RAW + "/version.txt?_t=" + FlxG.random.int(0, 999999);
+        var verLoader = new URLLoader();
+        verLoader.addEventListener("complete", function(e) {
+            try {
+                var remoteVer = StringTools.trim(Std.string(e.target.data));
+                if (!isNewerVersion(remoteVer, CORE_VERSION)) return;
+
+                trace("UpdateChecker: Nova versao do sistema disponivel (" + remoteVer + "). Baixando...");
+                var coreUrl = GH_RAW + "/scripts/UpdateChecker.hxc?_t=" + FlxG.random.int(0, 999999);
+                var coreLoader = new URLLoader();
+                coreLoader.addEventListener("complete", function(ec) {
+                    try {
+                        var cwd = StringTools.replace(Sys.getCwd(), "\\", "/");
+                        if (!StringTools.endsWith(cwd, "/")) cwd += "/";
+                        var savePath = cwd + "mods/" + modFolderName + "/scripts/UpdateChecker.hxc";
+                        sys.io.File.saveContent(savePath, Std.string(ec.target.data));
+                        trace("UpdateChecker: Sistema atualizado para v" + remoteVer + "! Reinicie o jogo para aplicar.");
+                    } catch(err:Dynamic) {
+                        trace("UpdateChecker: Erro ao salvar sistema - " + err);
+                    }
+                });
+                coreLoader.addEventListener("ioError", function(ec) {
+                    trace("UpdateChecker: Erro ao baixar sistema do GitHub.");
+                });
+                coreLoader.load(new URLRequest(coreUrl));
+            } catch(err:Dynamic) {}
+        });
+        verLoader.addEventListener("ioError", function(e) {});
+        verLoader.load(new URLRequest(verUrl));
+    }
+
+    function isNewerVersion(remote:String, local:String):Bool {
+        if (remote == local) return false;
+        var rp = remote.split(".");
+        var lp = local.split(".");
+        var len = rp.length > lp.length ? rp.length : lp.length;
+        for (i in 0...len) {
+            var rv = i < rp.length ? (Std.parseInt(rp[i]) != null ? Std.parseInt(rp[i]) : 0) : 0;
+            var lv = i < lp.length ? (Std.parseInt(lp[i]) != null ? Std.parseInt(lp[i]) : 0) : 0;
+            if (rv > lv) return true;
+            if (rv < lv) return false;
+        }
+        return false;
+    }
+}
+
+// ============================================================
+//  STATE: Pop-up animado de atualização
+// ============================================================
+class UpdatePopupState extends MusicBeatState {
+    public static var modName:String       = "";
+    public static var versionStr:String    = "";
+    public static var changelogStr:String  = "";
+    public static var changelogData:Array<Dynamic> = null;
+    public static var downloadLink:String  = null;
+    public static var thumbUrl:String      = null;
+    public static var modID_:String        = "";
+
+    var bgOverlay:FlxSprite;
+    var panelBg:FlxSprite;
+    var panelOutline:FlxSprite;
+    var thumbPlaceholder:FlxSprite;
+    var thumbSprite:FlxSprite;
+    var scrimSprite:FlxSprite;
+    var gbBadge:FlxText;
+    var titleText:FlxText;
+    var infoText:FlxText;
+    var whatsNewTitle:FlxText;
+    var btnUpdate:FlxSprite;
+    var btnUpdateText:FlxText;
+    var btnLater:FlxSprite;
+    var btnLaterText:FlxText;
+    var buttonGroup:FlxTypedGroup<FlxSprite>;
+
+    var curSelected:Int        = 0;
+    var canInteract:Bool       = false;
+    var closing:Bool           = false;
+    var elapsedTime:Float      = 0;
+    var minInteractDelay:Float = 1.5;
+
+    var panelBaseY:Float;    var outlineBaseY:Float;
+    var thumbBaseY:Float;    var scrimBaseY:Float;
+    var gbBadgeBaseY:Float;  var titleBaseY:Float;
+    var infoBaseY:Float;     var whatsNewBaseY:Float;
+    var changelogBaseY:Float;
+    var btnUpdateBaseY:Float; var btnUpdateTxtBaseY:Float;
+    var btnLaterBaseY:Float;  var btnLaterTxtBaseY:Float;
+
+    var animOffset:Float  = 0;
+    var animStarted:Bool  = false;
+
+    var textScroll:Float       = 0;
+    var maxVisibleHeight:Float = 130;
+    var changelogItems:Array<Dynamic> = [];
+    var changelogHeight:Float  = 0;
+    var touchStartY:Float      = 0;
+    var touchStartScroll:Float = 0;
+
+    var panelW:Int = 900;
+    var panelH:Int = 680;
+    var thumbH:Int = 320;
+    var cx:Float;
+    var cy:Float;
+
+    override function create() {
+        super.create();
+        cx = (FlxG.width  - panelW) / 2;
+        cy = (FlxG.height - panelH) / 2;
+
+        bgOverlay = new FlxSprite().makeGraphic(FlxG.width, FlxG.height, 0xFF000000);
+        bgOverlay.alpha = 0;
+        bgOverlay.scrollFactor.set(0, 0);
+        add(bgOverlay);
+
+        panelOutline = new FlxSprite(cx - 2, cy - 2).makeGraphic(panelW + 4, panelH + 4, 0xFF353545);
+        panelOutline.scrollFactor.set(0, 0);
+        add(panelOutline);
+        outlineBaseY = panelOutline.y;
+
+        panelBg = new FlxSprite(cx, cy).loadGraphic(Paths.image("updateBG"));
+        panelBg.setGraphicSize(panelW, panelH);
+        panelBg.updateHitbox();
+        panelBg.scrollFactor.set(0, 0);
+        add(panelBg);
+        panelBaseY = panelBg.y;
+
+        thumbPlaceholder = new FlxSprite(cx, cy).makeGraphic(panelW, thumbH, 0xFF151520);
+        thumbPlaceholder.scrollFactor.set(0, 0);
+        add(thumbPlaceholder);
+        thumbBaseY = thumbPlaceholder.y;
+
+        scrimSprite = new FlxSprite(cx, cy + thumbH - 160).loadGraphic(Paths.image("updateScrim"));
+        scrimSprite.setGraphicSize(panelW, 160);
+        scrimSprite.updateHitbox();
+        scrimSprite.scrollFactor.set(0, 0);
+        add(scrimSprite);
+        scrimBaseY = scrimSprite.y;
+
+        gbBadge = new FlxText(cx + 20, cy + thumbH - 30, panelW, "gamebanana.com/mods/" + modID_, 16);
+        gbBadge.setFormat(Paths.font("vcr.ttf"), 16, 0xAAFFFFFF, "left");
+        gbBadge.scrollFactor.set(0, 0);
+        add(gbBadge);
+        gbBadgeBaseY = gbBadge.y;
+
+        var lang = "en";
+        try { lang = Capabilities.language.toLowerCase().substring(0, 2); } catch(e:Dynamic) {}
+
+        var txtTitle   = "UPDATE AVAILABLE";
+        var txtNewVer  = "New version: v";
+        var txtWhatsNew= "What's new:\n\n";
+        var txtBtnUpd  = "UPDATE";
+        var txtBtnLat  = "LATER";
+
+        switch (lang) {
+            case "pt": txtTitle="ATUALIZACAO DISPONIVEL";     txtNewVer="Nova versao: v";      txtWhatsNew="O que ha de novo:\n\n";    txtBtnUpd="ATUALIZAR";    txtBtnLat="DEPOIS";
+            case "es": txtTitle="ACTUALIZACION DISPONIBLE";   txtNewVer="Nueva version: v";    txtWhatsNew="Que hay de nuevo:\n\n";    txtBtnUpd="ACTUALIZAR";   txtBtnLat="DESPUES";
+            case "fr": txtTitle="MISE A JOUR DISPONIBLE";     txtNewVer="Nouvelle version: v"; txtWhatsNew="Nouveautes:\n\n";          txtBtnUpd="METTRE A JOUR";txtBtnLat="PLUS TARD";
+            case "de": txtTitle="UPDATE VERFUEGBAR";          txtNewVer="Neue Version: v";     txtWhatsNew="Was ist neu:\n\n";         txtBtnUpd="AKTUALISIEREN";txtBtnLat="SPAETER";
+            case "it": txtTitle="AGGIORNAMENTO DISP.";        txtNewVer="Nuova versione: v";   txtWhatsNew="Novita:\n\n";             txtBtnUpd="AGGIORNA";     txtBtnLat="PIU TARDI";
+            case "nl": txtTitle="UPDATE BESCHIKBAAR";         txtNewVer="Nieuwe versie: v";    txtWhatsNew="Wat is er nieuw:\n\n";     txtBtnUpd="UPDATEN";      txtBtnLat="LATER";
+            case "pl": txtTitle="DOSTEPNA AKTUALIZACJA";      txtNewVer="Nowa wersja: v";      txtWhatsNew="Co nowego:\n\n";           txtBtnUpd="AKTUALIZUJ";   txtBtnLat="POZNIEJ";
+            case "tr": txtTitle="GUNCELLEME MEVCUT";          txtNewVer="Yeni surum: v";       txtWhatsNew="Yenilikler:\n\n";          txtBtnUpd="GUNCELLE";     txtBtnLat="DAHA SONRA";
+            case "sv": txtTitle="UPPDATERING TILLGANGLIG";    txtNewVer="Ny version: v";       txtWhatsNew="Nyheter:\n\n";             txtBtnUpd="UPPDATERA";    txtBtnLat="SENARE";
+            case "no": txtTitle="OPPDATERING TILGJENGELIG";   txtNewVer="Ny versjon: v";       txtWhatsNew="Hva er nytt:\n\n";         txtBtnUpd="OPPDATER";     txtBtnLat="SENERE";
+            case "da": txtTitle="OPDATERING TILGAENGELIG";    txtNewVer="Ny version: v";       txtWhatsNew="Hvad er nyt:\n\n";         txtBtnUpd="OPDATER";      txtBtnLat="SENERE";
+            case "fi": txtTitle="PAIVITYS SAATAVILLA";        txtNewVer="Uusi versio: v";      txtWhatsNew="Mita uutta:\n\n";          txtBtnUpd="PAIVITA";      txtBtnLat="MYOHEMMIN";
+            case "id": txtTitle="PEMBARUAN TERSEDIA";         txtNewVer="Versi baru: v";       txtWhatsNew="Apa yang baru:\n\n";       txtBtnUpd="PERBARUI";     txtBtnLat="NANTI";
+            case "ms": txtTitle="KEMASKINI TERSEDIA";         txtNewVer="Versi baharu: v";     txtWhatsNew="Apa yang baharu:\n\n";     txtBtnUpd="KEMASKINI";    txtBtnLat="NANTI";
+            case "tl": txtTitle="MAY BAGONG UPDATE";          txtNewVer="Bagong bersyon: v";   txtWhatsNew="Ano ang bago:\n\n";        txtBtnUpd="I-UPDATE";     txtBtnLat="MAMAYA";
+            case "ro": txtTitle="ACTUALIZARE DISPONIBILA";    txtNewVer="Versiune noua: v";    txtWhatsNew="Noutati:\n\n";             txtBtnUpd="ACTUALIZEAZA"; txtBtnLat="MAI TARZIU";
+            case "hu": txtTitle="FRISSITES ELERHETO";         txtNewVer="Uj verzio: v";        txtWhatsNew="Ujdonsagok:\n\n";          txtBtnUpd="FRISSITES";    txtBtnLat="KESOBB";
+            case "cs": txtTitle="K DISPOZICI AKTUALIZACE";   txtNewVer="Nova verze: v";       txtWhatsNew="Co je noveho:\n\n";        txtBtnUpd="AKTUALIZOVAT"; txtBtnLat="POZDEJI";
+            case "sk": txtTitle="K DISPOZICII AKTUALIZACIA"; txtNewVer="Nova verzia: v";      txtWhatsNew="Co je nove:\n\n";          txtBtnUpd="AKTUALIZOVAT"; txtBtnLat="NESKOR";
+            case "hr": txtTitle="AZURIRANJE DOSTUPNO";        txtNewVer="Nova verzija: v";     txtWhatsNew="Sto je novo:\n\n";         txtBtnUpd="AZURIRAJ";     txtBtnLat="KASNIJE";
+        }
+
+        var textStartY = cy + thumbH + 10;
+
+        titleText = new FlxText(cx, textStartY, panelW, txtTitle, 42);
+        titleText.setFormat(Paths.font("vcr.ttf"), 42, 0xFFFFFFFF, "center", FlxTextBorderStyle.OUTLINE, 0xFF000000);
+        titleText.borderSize = 2;
+        titleText.scrollFactor.set(0, 0);
+        add(titleText);
+        titleBaseY = titleText.y;
+
+        infoText = new FlxText(cx, textStartY + 50, panelW, modName + "   |   " + txtNewVer + versionStr, 22);
+        infoText.setFormat(Paths.font("vcr.ttf"), 22, 0xFF999999, "center");
+        infoText.scrollFactor.set(0, 0);
+        add(infoText);
+        infoBaseY = infoText.y;
+
+        whatsNewTitle = new FlxText(cx + 40, textStartY + 90, panelW - 80, txtWhatsNew, 20);
+        whatsNewTitle.setFormat(Paths.font("vcr.ttf"), 20, 0xFFFFFFFF, "left");
+        whatsNewTitle.scrollFactor.set(0, 0);
+        add(whatsNewTitle);
+        whatsNewBaseY = whatsNewTitle.y;
+
+        changelogBaseY = textStartY + 120;
+        var currentY:Float = 0;
+
+        if (changelogData != null && changelogData.length > 0) {
+            for (item in changelogData) {
+                var transCat = translateCategory(item.cat, lang);
+                var catText = new FlxText(cx + 44, changelogBaseY + currentY + 2, 0, transCat, 18);
+                catText.setFormat(Paths.font("vcr.ttf"), 18, getBadgeColor(item.cat), "center");
+                catText.scrollFactor.set(0, 0);
+
+                var catBg = new FlxSprite(cx + 40, changelogBaseY + currentY).makeGraphic(Std.int(catText.width + 8), 24, 0xFF353540);
+                catBg.scrollFactor.set(0, 0);
+
+                var descText = new FlxText(cx + 40 + catBg.width + 10, changelogBaseY + currentY + 2, panelW - 80 - catBg.width - 10, item.text, 18);
+                descText.setFormat(Paths.font("vcr.ttf"), 18, 0xFFE0E0E0, "left");
+                descText.scrollFactor.set(0, 0);
+
+                changelogItems.push({spr: catBg,   baseY: catBg.y});
+                changelogItems.push({spr: catText,  baseY: catText.y});
+                changelogItems.push({spr: descText, baseY: descText.y});
+
+                add(catBg); add(catText); add(descText);
+                currentY += Math.max(24, descText.height) + 8;
+            }
+        } else {
+            var descText = new FlxText(cx + 40, changelogBaseY, panelW - 80, changelogStr, 18);
+            descText.setFormat(Paths.font("vcr.ttf"), 18, 0xFFE0E0E0, "left");
+            descText.scrollFactor.set(0, 0);
+            changelogItems.push({spr: descText, baseY: descText.y});
+            add(descText);
+            currentY += descText.height;
+        }
+        changelogHeight = currentY;
+
+        buttonGroup = new FlxTypedGroup();
+        add(buttonGroup);
+
+        var btnY = cy + panelH - 80;
+        var btnW = 300;
+        var btnH = 55;
+
+        btnUpdate = new FlxSprite(cx + 100, btnY).makeGraphic(btnW, btnH, 0xFF2A9040);
+        btnUpdate.scrollFactor.set(0, 0);
+        btnUpdate.ID = 0;
+        buttonGroup.add(btnUpdate);
+        btnUpdateBaseY = btnUpdate.y;
+
+        btnUpdateText = new FlxText(btnUpdate.x, btnY + 12, btnW, txtBtnUpd, 26);
+        btnUpdateText.setFormat(Paths.font("vcr.ttf"), 26, 0xFFFFFFFF, "center", FlxTextBorderStyle.OUTLINE, 0xFF000000);
+        btnUpdateText.scrollFactor.set(0, 0);
+        add(btnUpdateText);
+        btnUpdateTxtBaseY = btnUpdateText.y;
+
+        btnLater = new FlxSprite(cx + panelW - btnW - 100, btnY).makeGraphic(btnW, btnH, 0xFF353540);
+        btnLater.scrollFactor.set(0, 0);
+        btnLater.ID = 1;
+        buttonGroup.add(btnLater);
+        btnLaterBaseY = btnLater.y;
+
+        btnLaterText = new FlxText(btnLater.x, btnY + 12, btnW, txtBtnLat, 26);
+        btnLaterText.setFormat(Paths.font("vcr.ttf"), 26, 0xFFFFFFFF, "center", FlxTextBorderStyle.OUTLINE, 0xFF000000);
+        btnLaterText.scrollFactor.set(0, 0);
+        add(btnLaterText);
+        btnLaterTxtBaseY = btnLaterText.y;
+
+        pushOffscreen(FlxG.height);
+        FlxTween.num(0, 0.65, 0.55, {ease: FlxEase.quartOut}, function(v) { bgOverlay.alpha = v; });
+
+        if (thumbUrl != null && thumbUrl != "") {
+            loadThumbnail(thumbUrl);
+            new FlxTimer().start(1.5, function(t) { startEntranceAnimation(); });
+        } else {
+            new FlxTimer().start(0.2, function(t) { startEntranceAnimation(); });
+        }
+    }
+
+    function startEntranceAnimation() {
+        if (animStarted) return;
+        animStarted = true;
+        FlxG.sound.play(Paths.sound('scrollMenu'), 1);
+        FlxTween.num(0, FlxG.height, 0.8, {ease: FlxEase.elasticOut, onComplete: function(tw) {
+            canInteract = true;
+            updateSelection();
+        }}, function(v) { animOffset = v; });
+    }
+
+    function getBadgeColor(cat:String):Int {
+        if (cat == null) return 0xFF888888;
+        var c = cat.toLowerCase();
+        if (c == "addition" || c == "suggestion" || c == "feature")    return 0xFF6699FF; // Azul
+        if (c == "removal"  || c == "refactor")                        return 0xFF888888; // Cinza
+        if (c == "overhaul" || c == "bugfix")                          return 0xFFE06666; // Vermelho
+        if (c == "adjustment" || c == "amendment")                     return 0xFF50C878; // Verde
+        if (c == "improvement" || c == "optimization" || c == "tweak") return 0xFFD95F8A; // Rosa
+        return 0xFF888888;
+    }
+
+    function translateCategory(cat:String, lang:String):String {
+        if (cat == null) return "";
+        var c = cat.toLowerCase();
+        switch (lang) {
+            case "pt":
+                if(c=="addition")return"Adicao";if(c=="removal")return"Remocao";if(c=="overhaul")return"Recriacao";if(c=="adjustment")return"Ajuste";if(c=="amendment")return"Emenda";if(c=="improvement")return"Melhoria";if(c=="optimization")return"Otimizacao";if(c=="tweak")return"Retoque";if(c=="suggestion")return"Sugestao";if(c=="feature")return"Recurso";if(c=="refactor")return"Refatoracao";if(c=="bugfix")return"Correcao";
+            case "es":
+                if(c=="addition")return"Adicion";if(c=="removal")return"Eliminacion";if(c=="overhaul")return"Revision";if(c=="adjustment")return"Ajuste";if(c=="amendment")return"Enmienda";if(c=="improvement")return"Mejora";if(c=="optimization")return"Optimizacion";if(c=="tweak")return"Retoque";if(c=="suggestion")return"Sugerencia";if(c=="feature")return"Funcion";if(c=="refactor")return"Refactor";if(c=="bugfix")return"Correccion";
+            case "fr":
+                if(c=="addition")return"Ajout";if(c=="removal")return"Suppression";if(c=="overhaul")return"Refonte";if(c=="adjustment")return"Ajustement";if(c=="amendment")return"Amendement";if(c=="improvement")return"Amelioration";if(c=="optimization")return"Optimisation";if(c=="tweak")return"Ajustement";if(c=="suggestion")return"Suggestion";if(c=="feature")return"Fonction";if(c=="refactor")return"Refactorisation";if(c=="bugfix")return"Correction";
+            case "de":
+                if(c=="addition")return"Zusatz";if(c=="removal")return"Entfernung";if(c=="overhaul")return"Ueberholung";if(c=="adjustment")return"Anpassung";if(c=="amendment")return"Aenderung";if(c=="improvement")return"Verbesserung";if(c=="optimization")return"Optimierung";if(c=="tweak")return"Anpassung";if(c=="suggestion")return"Vorschlag";if(c=="feature")return"Funktion";if(c=="refactor")return"Refaktorierung";if(c=="bugfix")return"Fehlerbehebung";
+            case "it":
+                if(c=="addition")return"Aggiunta";if(c=="removal")return"Rimozione";if(c=="overhaul")return"Revisione";if(c=="adjustment")return"Regolazione";if(c=="amendment")return"Emendamento";if(c=="improvement")return"Miglioramento";if(c=="optimization")return"Ottimizzazione";if(c=="tweak")return"Ritocco";if(c=="suggestion")return"Suggerimento";if(c=="feature")return"Funzione";if(c=="refactor")return"Refactoring";if(c=="bugfix")return"Correzione";
+        }
+        return cat;
+    }
+
+    function pushOffscreen(amount:Float) {
+        panelOutline.y  = outlineBaseY  + amount;
+        panelBg.y       = panelBaseY    + amount;
+        thumbPlaceholder.y = thumbBaseY + amount;
+        scrimSprite.y   = scrimBaseY    + amount;
+        gbBadge.y       = gbBadgeBaseY  + amount;
+        titleText.y     = titleBaseY    + amount;
+        infoText.y      = infoBaseY     + amount;
+        whatsNewTitle.y = whatsNewBaseY + amount;
+        for (item in changelogItems) item.spr.y = item.baseY + amount;
+        btnUpdate.y     = btnUpdateBaseY    + amount;
+        btnUpdateText.y = btnUpdateTxtBaseY + amount;
+        btnLater.y      = btnLaterBaseY     + amount;
+        btnLaterText.y  = btnLaterTxtBaseY  + amount;
+        if (thumbSprite != null) thumbSprite.y = thumbBaseY + amount;
+    }
+
+    function loadThumbnail(url:String) {
+        try {
+            var imgLoader = new Loader();
+            imgLoader.contentLoaderInfo.addEventListener("complete", function(e) {
+                try {
+                    var content:Dynamic = imgLoader.content;
+                    var bitmapData:Dynamic = content.bitmapData;
+                    if (bitmapData == null) return;
+                    var scaleX:Float = panelW / bitmapData.width;
+                    var scaleY:Float = thumbH / bitmapData.height;
+                    var scale:Float  = (scaleX > scaleY) ? scaleX : scaleY;
+                    var matrix = new Matrix();
+                    matrix.scale(scale, scale);
+                    var drawX = (panelW - (bitmapData.width  * scale)) / 2;
+                    var drawY = (thumbH - (bitmapData.height * scale)) / 2;
+                    matrix.translate(drawX, drawY);
+                    var croppedBmd = new BitmapData(panelW, thumbH, true, 0x00000000);
+                    croppedBmd.draw(bitmapData, matrix);
+                    thumbSprite = new FlxSprite(cx, cy);
+                    thumbSprite.loadGraphic(croppedBmd);
+                    thumbSprite.scrollFactor.set(0, 0);
+                    thumbBaseY = cy;
+                    thumbSprite.y = thumbBaseY + (FlxG.height - animOffset);
+                    insert(members.indexOf(scrimSprite), thumbSprite);
+                } catch(err:Dynamic) {}
+                startEntranceAnimation();
+            });
+            imgLoader.contentLoaderInfo.addEventListener("ioError", function(e) {
+                startEntranceAnimation();
+            });
+            imgLoader.load(new URLRequest(url));
+        } catch(err:Dynamic) {
+            startEntranceAnimation();
+        }
+    }
+
+    override function update(elapsed:Float) {
+        super.update(elapsed);
+        elapsedTime += elapsed;
+
+        var off:Float = FlxG.height - animOffset;
+        panelOutline.y  = outlineBaseY  + off;
+        panelBg.y       = panelBaseY    + off;
+        thumbPlaceholder.y = thumbBaseY + off;
+        scrimSprite.y   = scrimBaseY    + off;
+        gbBadge.y       = gbBadgeBaseY  + off;
+        titleText.y     = titleBaseY    + off;
+        infoText.y      = infoBaseY     + off;
+        whatsNewTitle.y = whatsNewBaseY + off;
+        btnUpdate.y     = btnUpdateBaseY    + off;
+        btnUpdateText.y = btnUpdateTxtBaseY + off;
+        btnLater.y      = btnLaterBaseY     + off;
+        btnLaterText.y  = btnLaterTxtBaseY  + off;
+        if (thumbSprite != null) thumbSprite.y = thumbBaseY + off;
+
+        var maxScroll:Float = 0;
+        if (changelogHeight > maxVisibleHeight) maxScroll = changelogHeight - maxVisibleHeight;
+
+        if (maxScroll > 0 && canInteract && !closing && elapsedTime >= minInteractDelay) {
+            if (FlxG.mouse.wheel != 0) {
+                textScroll -= FlxG.mouse.wheel * 30;
+                if (textScroll < 0) textScroll = 0;
+                if (textScroll > maxScroll) textScroll = maxScroll;
+            }
+            if (FlxG.touches != null) {
+                for (touch in FlxG.touches.list) {
+                    var ty = touch.getWorldPosition(FlxG.camera).y;
+                    var tx = touch.getWorldPosition(FlxG.camera).x;
+                    if (ty >= changelogBaseY + off && ty <= changelogBaseY + off + maxVisibleHeight && tx >= cx && tx <= cx + panelW) {
+                        if (touch.justPressed) { touchStartY = ty; touchStartScroll = textScroll; }
+                        else if (touch.pressed) {
+                            textScroll = touchStartScroll - (ty - touchStartY);
+                            if (textScroll < 0) textScroll = 0;
+                            if (textScroll > maxScroll) textScroll = maxScroll;
+                        }
+                    }
+                }
+            }
+        } else {
+            textScroll = 0;
+        }
+
+        for (item in changelogItems) {
+            item.spr.y = item.baseY - textScroll + off;
+            var localClipY = (changelogBaseY + off) - item.spr.y;
+            if (item.spr.clipRect == null) item.spr.clipRect = new flixel.math.FlxRect();
+            item.spr.clipRect.x = 0;
+            item.spr.clipRect.y = localClipY;
+            item.spr.clipRect.width = panelW;
+            item.spr.clipRect.height = maxVisibleHeight;
+            item.spr.clipRect = item.spr.clipRect;
+        }
+
+        if (!canInteract || closing || elapsedTime < minInteractDelay) return;
+
+        if (FlxG.mouse.justMoved) {
+            for (btn in buttonGroup.members) {
+                if (btn != null && FlxG.mouse.overlaps(btn) && curSelected != btn.ID) {
+                    curSelected = btn.ID;
+                    FlxG.sound.play(Paths.sound('scrollMenu'), 0.5);
+                    updateSelection();
+                }
+            }
+        }
+
+        var clicked = false;
+        if (FlxG.mouse.justPressed) {
+            for (btn in buttonGroup.members) {
+                if (btn != null && FlxG.mouse.overlaps(btn)) { curSelected = btn.ID; clicked = true; }
+            }
+        }
+
+        if (FlxG.touches != null) {
+            for (touch in FlxG.touches.list) {
+                if (touch.justPressed) {
+                    for (btn in buttonGroup.members) {
+                        if (btn != null && btn.overlapsPoint(touch.getWorldPosition(FlxG.camera))) { curSelected = btn.ID; clicked = true; }
+                    }
+                }
+            }
+        }
+
+        if (FlxG.keys.justPressed.LEFT || FlxG.keys.justPressed.RIGHT ||
+            FlxG.keys.justPressed.A    || FlxG.keys.justPressed.D) {
+            curSelected = (curSelected == 0) ? 1 : 0;
+            FlxG.sound.play(Paths.sound('scrollMenu'), 0.6);
+            updateSelection();
+        }
+
+        if (FlxG.keys.justPressed.ENTER || FlxG.keys.justPressed.SPACE || clicked) confirm();
+        if (FlxG.keys.justPressed.ESCAPE || FlxG.keys.justPressed.BACKSPACE) { curSelected = 1; confirm(); }
+    }
+
+    function confirm() {
+        if (closing) return;
+        closing = true;
+        canInteract = false;
+
+        if (curSelected == 0) {
+            FlxG.sound.play(Paths.sound('confirmMenu'), 1);
+            if (downloadLink != null && downloadLink != "")
+                try { WindowUtil.openURL(downloadLink); } catch(err:Dynamic) {}
+        } else {
+            FlxG.sound.play(Paths.sound('cancelMenu'), 1);
+        }
+
+        FlxTween.num(bgOverlay.alpha, 0, 0.45, {ease: FlxEase.quartIn}, function(v) { bgOverlay.alpha = v; });
+        var startOff = animOffset;
+        FlxTween.num(startOff, 0, 0.45, {ease: FlxEase.backIn}, function(v) { animOffset = v; });
+        new FlxTimer().start(0.55, function(t) { FlxG.switchState(new TitleState()); });
+    }
+
+    function updateSelection() {
+        FlxTween.num(btnUpdate.scale.x, 1.0, 0.12, null, function(v) { btnUpdate.scale.set(v,v); btnUpdateText.scale.set(v,v); });
+        btnUpdate.color = 0xFF2A9040;
+        FlxTween.num(btnLater.scale.x,  1.0, 0.12, null, function(v) { btnLater.scale.set(v,v);  btnLaterText.scale.set(v,v);  });
+        btnLater.color = 0xFF353540;
+
+        if (curSelected == 0) {
+            FlxTween.num(1.0, 1.12, 0.12, null, function(v) { btnUpdate.scale.set(v,v); btnUpdateText.scale.set(v,v); });
+            btnUpdate.color = 0xFF35D058;
+        } else {
+            FlxTween.num(1.0, 1.12, 0.12, null, function(v) { btnLater.scale.set(v,v); btnLaterText.scale.set(v,v); });
+            btnLater.color = 0xFF505060;
+        }
+    }
+}
