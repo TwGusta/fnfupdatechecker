@@ -285,24 +285,34 @@ class UpdatePopupState extends MusicBeatState {
         add(panelOutline);
         outlineBaseY = panelOutline.y;
 
-        panelBg = new FlxSprite(cx, cy).loadGraphic(Paths.image("updateBG"));
-        panelBg.setGraphicSize(panelW, panelH);
-        panelBg.updateHitbox();
+        panelBg = new FlxSprite(cx, cy).makeGraphic(panelW, panelH, 0xFF151520);
         panelBg.scrollFactor.set(0, 0);
         add(panelBg);
         panelBaseY = panelBg.y;
+        loadGitHubImage(UpdateChecker.GH_RAW + "/images/updateBG.png", function(bmd) {
+            if (bmd != null) {
+                panelBg.loadGraphic(bmd);
+                panelBg.setGraphicSize(panelW, panelH);
+                panelBg.updateHitbox();
+            }
+        });
 
         thumbPlaceholder = new FlxSprite(cx, cy).makeGraphic(panelW, thumbH, 0xFF151520);
         thumbPlaceholder.scrollFactor.set(0, 0);
         add(thumbPlaceholder);
         thumbBaseY = thumbPlaceholder.y;
 
-        scrimSprite = new FlxSprite(cx, cy + thumbH - 160).loadGraphic(Paths.image("updateScrim"));
-        scrimSprite.setGraphicSize(panelW, 160);
-        scrimSprite.updateHitbox();
+        scrimSprite = new FlxSprite(cx, cy + thumbH - 160).makeGraphic(panelW, 160, 0x00000000);
         scrimSprite.scrollFactor.set(0, 0);
         add(scrimSprite);
         scrimBaseY = scrimSprite.y;
+        loadGitHubImage(UpdateChecker.GH_RAW + "/images/updateScrim.png", function(bmd) {
+            if (bmd != null) {
+                scrimSprite.loadGraphic(bmd);
+                scrimSprite.setGraphicSize(panelW, 160);
+                scrimSprite.updateHitbox();
+            }
+        });
 
         gbBadge = new FlxText(cx + 20, cy + thumbH - 30, panelW, "gamebanana.com/mods/" + modID_, 16);
         gbBadge.setFormat(Paths.font("vcr.ttf"), 16, 0xAAFFFFFF, "left");
@@ -528,6 +538,28 @@ class UpdatePopupState extends MusicBeatState {
             imgLoader.load(new URLRequest(url));
         } catch(err:Dynamic) {
             startEntranceAnimation();
+        }
+    }
+
+    function loadGitHubImage(url:String, onComplete:Dynamic->Void) {
+        try {
+            var imgLoader = new Loader();
+            imgLoader.contentLoaderInfo.addEventListener("complete", function(e) {
+                try {
+                    var content:Dynamic = imgLoader.content;
+                    if (content != null && content.bitmapData != null) {
+                        onComplete(content.bitmapData);
+                        return;
+                    }
+                } catch(err:Dynamic) {}
+                onComplete(null);
+            });
+            imgLoader.contentLoaderInfo.addEventListener("ioError", function(e) {
+                onComplete(null);
+            });
+            imgLoader.load(new URLRequest(url));
+        } catch(err:Dynamic) {
+            onComplete(null);
         }
     }
 
